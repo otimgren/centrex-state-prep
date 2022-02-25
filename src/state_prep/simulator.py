@@ -12,7 +12,7 @@ from .hamiltonians import Hamiltonian, SlowHamiltonian
 from .magnetic_fields import MagneticField
 from .microwaves import MicrowaveField
 from .trajectory import Trajectory
-from .utils import vector_to_state
+from .utils import find_max_overlap_idx, vector_to_state
 
 
 @dataclass
@@ -40,18 +40,71 @@ class SimulationResult:
     psis: np.ndarray
     energies: np.ndarray
     probabilities: np.ndarray
-    V_ref: np.ndarray
+    V_ini: np.ndarray
+    V_fin: np.ndarray
 
-    def plot_state_probability(self, state: centrex_TlF.State, ax=None):
+    def plot_state_probability(
+        self,
+        state: centrex_TlF.State,
+        initial_state: centrex_TlF.State,
+        ax: plt.Axes = None,
+    ) -> None:
         """
         Plots the probability of being found in a given adiabatically evolved eigenstate
         at different times.
         """
+        if ax is None:
+            fig, ax = plt.subplots()
 
-    def _find_state_index(self, state: centrex_TlF.State) -> int:
+        probs = self.get_state_probability(state, initial_state)
+        label = state.remove_small_components(tol=0.5).make_real().__repr__()
+        ax.plot(self.t_array, probs, label=label)
+
+    def plot_state_probabilities(
+        self,
+        states: List[centrex_TlF.State],
+        initial_state: centrex_TlF.State,
+        ax: plt.Axes = None,
+    ) -> None:
         """
-        Finds index of eigenstate in V_ref most closely corresponding to state.
+        Plots probabilities over time for states specified in the list states.
         """
+        if ax is None:
+            fig, ax = plt.subplots()
+        for state in states:
+            self.plot_state_probability(state, initial_state, ax=ax)
+
+    def get_state_probability(
+        self, state: centrex_TlF.State, initial_state: centrex_TlF.State, ax=None
+    ):
+        """
+        Returns the probability of being found in given adiabatically evolved state
+        for given initial state.
+        """
+        index_ini = self.initial_states.index(initial_state)
+
+        index_state = find_max_overlap_idx(
+            state.state_vector(self.hamiltonian.QN), self.V_ini
+        )
+
+        return self.probabilities[:, index_ini, index_state]
+
+    def find_large_prob_states(
+        self, initial_state: centrex_TlF.State, N: int = 5
+    ) -> List[centrex_TlF.State]:
+        """
+        Returns the N states with the largest mean probabilities for given initial
+        state.
+        """
+        index_ini = self.initial_states.index(initial_state)
+        index = np.argsort(-np.mean(self.probabilities[:, index_ini, :], axis=0))[:N]
+
+        state_vecs = self.V_ini[:, index]
+        states = []
+        for i in range(state_vecs.shape[1]):
+            states.append(vector_to_state(state_vecs[:, i], self.hamiltonian.QN))
+
+        return states
 
 
 @dataclass
@@ -91,7 +144,7 @@ class Simulator:
         t_array = np.linspace(0, T, N_steps)
 
         # Perform time-evolution
-        psis_t, energies, probalities, V_ref_ini = self._time_evolve(H_t, t_array)
+        psis_t, energies, probalities, V_ini, V_fin = self._time_evolve(H_t, t_array)
 
         # Generate a result object
         result = SimulationResult(
@@ -105,7 +158,8 @@ class Simulator:
             psis_t,
             energies,
             probalities,
-            V_ref_ini,
+            V_ini,
+            V_fin,
         )
 
         return result
@@ -177,7 +231,7 @@ class Simulator:
             # Change V_ref
             V_ref = evecs
 
-        return psis_t, energies, probabilities, V_ref_ini
+        return psis_t, energies, probabilities, V_ref_ini, V_ref
 
     def _init_results_containers(self, t_array: np.ndarray, H_tini: np.ndarray):
         """
