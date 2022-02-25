@@ -1,7 +1,7 @@
 # centrex-state-prep
 Code for running state preparation simulations for CeNTREX
 
-# Getting started
+## Getting started
 - Make sure you have Python installed, e.g. as part of [Anaconda](https://www.anaconda.com/products/individual)
 - I suggest creating a clean virtual environment, e.g. using an Anaconda Prompt and conda by running `conda create --name [new environment name] python==3.9`.
 - Install `centrex_TlF` in the new environment by following the instructions [here](https://github.com/ograsdijk/CeNTREX-TlF)
