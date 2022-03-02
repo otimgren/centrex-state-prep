@@ -57,8 +57,11 @@ class SimulationResult:
             fig, ax = plt.subplots()
 
         probs = self.get_state_probability(state, initial_state)
-        label = state.remove_small_components(tol=0.5).make_real().__repr__()
-        ax.plot(self.t_array, probs, label=label)
+        label = (
+            state.remove_small_components(tol=0.5).normalize().make_real().__repr__()
+        )
+        ax.plot(self.t_array / 1e-6, probs, label=label)
+        ax.set_xlabel(r"Time / $\mu$s")
 
     def plot_state_probabilities(
         self,
@@ -182,7 +185,7 @@ class Simulator:
             self.psis.append(V[:, idx])
             self.initial_states.append(vector_to_state(V[:, idx], self.hamiltonian.QN))
 
-    def _time_evolve(self, H_slow: Callable, t_array: np.ndarray):
+    def _time_evolve_no_mu(self, H_slow: Callable, t_array: np.ndarray):
         """
         Time evolves the system using the Hamiltonian function H_t
         over the time period in t_array.
