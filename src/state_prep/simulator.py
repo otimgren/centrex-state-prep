@@ -185,7 +185,7 @@ class Simulator:
             self.psis.append(V[:, idx])
             self.initial_states.append(vector_to_state(V[:, idx], self.hamiltonian.QN))
 
-    def _time_evolve_no_mu(self, H_slow: Callable, t_array: np.ndarray):
+    def _time_evolve(self, H_slow: Callable, t_array: np.ndarray):
         """
         Time evolves the system using the Hamiltonian function H_t
         over the time period in t_array.
