@@ -111,11 +111,19 @@ class SimulationResult:
 
         return states
 
-    def plot_state_energy(self, state: centrex_TlF.State, ax: plt.Axes = None):
+    def plot_state_energy(
+        self,
+        state: centrex_TlF.State,
+        zero_state: centrex_TlF = None,
+        ax: plt.Axes = None,
+    ):
         """
-        Plots the energy of state
+        Plots the energy of state, using energy of zero_state as zero energy.
         """
         energies = self.get_state_energy(state)
+        if zero_state:
+            energies_zero = self.get_state_energy(zero_state)
+            energies = energies - energies_zero
 
         if ax is None:
             fig, ax = plt.subplots()
@@ -128,7 +136,10 @@ class SimulationResult:
         ax.set_ylabel("Energy / kHz")
 
     def plot_state_energies(
-        self, states: List[centrex_TlF.State], ax: plt.Axes = None,
+        self,
+        states: List[centrex_TlF.State],
+        zero_state: centrex_TlF.State,
+        ax: plt.Axes = None,
     ) -> None:
         """
         Plots probabilities over time for states specified in the list states.
@@ -136,7 +147,7 @@ class SimulationResult:
         if ax is None:
             fig, ax = plt.subplots()
         for state in states:
-            self.plot_state_energy(state, ax=ax)
+            self.plot_state_energy(state, zero_state=zero_state, ax=ax)
 
     def get_state_energy(self, state: centrex_TlF.State) -> np.ndarray:
         """
