@@ -48,6 +48,7 @@ class SimulationResult:
         state: centrex_TlF.State,
         initial_state: centrex_TlF.State,
         ax: plt.Axes = None,
+        tolerance: float = 0.5,
     ) -> None:
         """
         Plots the probability of being found in a given adiabatically evolved eigenstate
@@ -58,7 +59,7 @@ class SimulationResult:
 
         probs = self.get_state_probability(state, initial_state)
         label = (
-            state.remove_small_components(tol=0.5).normalize().make_real().__repr__()
+            state.remove_small_components(tol = tolerance).normalize().make_real().__repr__()
         )
         ax.plot(self.t_array / 1e-6, probs, label=label)
         ax.set_xlabel(r"Time / $\mu$s")
@@ -68,6 +69,7 @@ class SimulationResult:
         states: List[centrex_TlF.State],
         initial_state: centrex_TlF.State,
         ax: plt.Axes = None,
+        tolerance: float = 0.5
     ) -> None:
         """
         Plots probabilities over time for states specified in the list states.
@@ -75,7 +77,7 @@ class SimulationResult:
         if ax is None:
             fig, ax = plt.subplots()
         for state in states:
-            self.plot_state_probability(state, initial_state, ax=ax)
+            self.plot_state_probability(state, initial_state, ax=ax, tolerance = tolerance)
 
     def get_state_probability(
         self, state: centrex_TlF.State, initial_state: centrex_TlF.State, ax=None

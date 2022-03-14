@@ -142,6 +142,8 @@ def E_field_lens(x, z0=0, V=3e4, R=1.75 * 0.0254 / 2, L=0.60, l=20e-3):
     return E_vec / 100
 
 
+
+
 # Define a function that gives the Ez component of the lens field as a function of position
 def lens_Ez(x, lens_z0, lens_L):
     """
@@ -202,3 +204,15 @@ def E_field_ring(x, z0=0, V=2e4, R=2.25 * 0.0254):
     # Return the electric field as an array which only has a z-component (approximation)
     return E / 100
 
+def E_field_tanh(x, z0=0, V=30e3, l = 1):
+    """
+    calculates the electric field along trajectory thatd decays in a tanh fashion
+    """
+    z = x[2]
+    mag_E = V* (1- np.tanh((z - z0)/l))
+    
+    E = np.zeros(x.shape)
+
+    E[2] = mag_E
+    
+    return E
