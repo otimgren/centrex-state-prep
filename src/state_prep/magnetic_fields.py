@@ -14,9 +14,15 @@ class MagneticField(StaticField):
     Class for representing magnetic fields.
     """
 
-    def __init__(self, B_R: Callable = None):
+    def __init__(self, B_R: Callable = None, R_t: Callable = None):
         self.B_R = B_R
         self.R_to_r = np.array([[0, 0, 1], [0, -1, 0], [1, 0, 0]])
+
+        # If molecule trajectory is provided, generate B as function of time
+        if R_t is not None:
+            self.B_t = self.get_B_t_func(R_t)
+        else:
+            self.B_t = None
 
     def __add__(self, other):
         """

@@ -3,6 +3,10 @@ from typing import Callable, List
 
 import centrex_TlF
 
+from .electric_fields import ElectricField
+from .magnetic_fields import MagneticField
+from .trajectory import Trajectory
+
 
 class Hamiltonian:
     pass
@@ -10,7 +14,15 @@ class Hamiltonian:
 
 @dataclass
 class SlowHamiltonian(Hamiltonian):
+    """
+    Representation for the slowly evolving Hamiltonian which contains the
+    internal Hamiltonian of the TlF molecule and the Stark and Zeeman Hamiltonians.
+    """
+
     Js: List[int]
+    trajectory: Trajectory
+    electric_field: Callable
+    magnetic_field: Callable
     basis: str = "uncoupled"
 
     def __post_init__(self):
@@ -23,10 +35,11 @@ class SlowHamiltonian(Hamiltonian):
         else:
             NotImplementedError("Basis not implemented.")
 
-    def get_H_t_func(self, E_t: Callable, B_t: Callable) -> Callable:
+        self.H_R = lambda R: self.H_EB(self.electric_field.E_R(R), self.magnetic_field.B_R(R))
+
+    def get_H_t_func(self) -> Callable:
         """
-        Returns a function that gives the Stark and Zeeman Hamiltonians 
-        as function of time.
+        Returns a function that gives the slow Hamiltonian as a function of time.
         """
-        return lambda t: self.H_EB(E_t(t), B_t(t))
+        return lambda t: self.H_R(self.trajectory.R_t(t))
 

@@ -12,7 +12,7 @@ from .hamiltonians import Hamiltonian, SlowHamiltonian
 from .magnetic_fields import MagneticField
 from .microwaves import MicrowaveField
 from .trajectory import Trajectory
-from .utils import find_max_overlap_idx, vector_to_state
+from .utils import find_max_overlap_idx, reorder_evecs, vector_to_state
 
 
 @dataclass
@@ -111,6 +111,44 @@ class SimulationResult:
 
         return states
 
+    def plot_state_energy(self, state: centrex_TlF.State, ax: plt.Axes = None):
+        """
+        Plots the energy of state
+        """
+        energies = self.get_state_energy(state)
+
+        if ax is None:
+            fig, ax = plt.subplots()
+
+        label = (
+            state.remove_small_components(tol=0.5).normalize().make_real().__repr__()
+        )
+        ax.plot(self.t_array / 1e-6, energies / (2 * np.pi / 1e3), label=label)
+        ax.set_xlabel(r"Time / $\mu$s")
+        ax.set_ylabel("Energy / kHz")
+
+    def plot_state_energies(
+        self, states: List[centrex_TlF.State], ax: plt.Axes = None,
+    ) -> None:
+        """
+        Plots probabilities over time for states specified in the list states.
+        """
+        if ax is None:
+            fig, ax = plt.subplots()
+        for state in states:
+            self.plot_state_energy(state, ax=ax)
+
+    def get_state_energy(self, state: centrex_TlF.State) -> np.ndarray:
+        """
+        Gets the energy of state for all values in t_array.
+        """
+
+        index_state = find_max_overlap_idx(
+            state.state_vector(self.hamiltonian.QN), self.V_ini
+        )
+
+        return self.energies[:, index_state]
+
 
 @dataclass
 class Simulator:
@@ -143,13 +181,44 @@ class Simulator:
         B_t = self.magnetic_field.get_B_t_func(self.trajectory.R_t)
 
         # Generate Hamiltonian that has slow time-evolution included
-        H_t = self.hamiltonian.get_H_t_func(E_t, B_t)
+        H_t = self.hamiltonian.get_H_t_func()
+
+        # Generate Hamiltonians for microwaves
+        if self.microwave_fields is not None:
+            # Initialize matrix for shifting energies in rotating frame
+            D_mu = np.zeros(len(self.hamiltonian.QN), len(self.hamiltonian.QN))
+
+            # Initialize container for Hamiltonians
+            muw_hams = []
+
+            for microwave_field in self.microwave_fields:
+                muw_hams.append(
+                    microwave_field.get_H_t_func(
+                        self.trajectory.R_t, self.hamiltonian.QN
+                    )
+                )
+                D_mu += microwave_field.D
+
+        # Generate function that gives couplings due to all microwaves
+        def H_mu_tot_t(t):
+            H_mu_tot = muw_hams[0](t)
+            if len(muw_hams) > 1:
+                for H_mu_t in muw_hams[1:]:
+                    H_mu_tot = H_mu_tot + H_mu_t(t)
+            return H_mu_tot
 
         # Generate time array
         t_array = np.linspace(0, T, N_steps)
 
         # Perform time-evolution
-        psis_t, energies, probalities, V_ini, V_fin = self._time_evolve(H_t, t_array)
+        if self.microwave_fields is None:
+            psis_t, energies, probalities, V_ini, V_fin = self._time_evolve(
+                H_t, t_array
+            )
+        else:
+            psis_t, energies, probalities, V_ini, V_fin = self._time_evolve_mu(
+                H_t, H_mu_t, t_array
+            )
 
         # Generate a result object
         result = SimulationResult(
@@ -220,7 +289,59 @@ class Simulator:
                 D, V = np.linalg.eigh(H_slow_i)
 
             # Reorder eigenvectors and energies
-            Es, evecs = self.reorder_evecs(V, D, V_ref)
+            Es, evecs = reorder_evecs(V, D, V_ref)
+
+            # Calculate propagator for the system
+            U_dt = V @ np.diag(np.exp(-1j * D * dt)) @ V.conj().T
+
+            # Apply propagator to each state vector
+            self.psis = np.einsum("ij,kj->ki", U_dt, self.psis)
+
+            # Store results for this timestep
+            psis_t[i + 1, :, :] = self.psis
+            energies[i + 1, :] = D
+            probabilities[i + 1, :, :] = self.calculate_probabilities(self.psis, evecs)
+
+            # Change V_ref
+            V_ref = evecs
+
+        return psis_t, energies, probabilities, V_ref_ini, V_ref
+
+    def _time_evolve_mu(self, H_slow: Callable, H_mu: Callable, t_array: np.ndarray):
+        """
+        Time evolves the system using the Hamiltonian function H_t
+        over the time period in t_array.
+        """
+        # Calculate Hamiltonian at tini
+        H_tini = H_slow(t_array[0])
+
+        # Initialize state vectors
+        self.init_state_vecs(H_tini)
+
+        # Initialize containers to store results
+        psis_t, energies, probabilities = self._init_results_containers(t_array, H_tini)
+
+        # Initialize reference matrix of eigenvectors that is used to keep track
+        # of adiabatic evolution of eigenstates
+        E_ref, V_ref = np.linalg.eigh(H_tini)
+        V_ref_ini = V_ref
+
+        # Loop over t_array to time-evolve
+        for i, t in enumerate(tqdm(t_array[:-1])):
+            # Calculate the timestep
+            dt = t_array[i + 1] - t_array[i]
+
+            # Calculate Hamiltonians
+            H_slow_i = H_slow(t)
+            H_mu_i = H
+
+            # Diagonalize Hamiltonian
+            D, V, info = zheevd(H_slow_i)
+            if info != 0:
+                D, V = np.linalg.eigh(H_slow_i)
+
+            # Reorder eigenvectors and energies
+            Es, evecs = reorder_evecs(V, D, V_ref)
 
             # Calculate propagator for the system
             U_dt = V @ np.diag(np.exp(-1j * D * dt)) @ V.conj().T
@@ -264,25 +385,6 @@ class Simulator:
         probabilities[0, :, :] = self.calculate_probabilities(self.psis, V)
 
         return psis_t, energies, probabilities
-
-    def reorder_evecs(
-        self, V_in: np.ndarray, E_in: np.ndarray, V_ref: np.ndarray
-    ) -> Tuple[np.ndarray]:
-        """
-        Reorders the matrix of eigenvectors V_in (each column is an eigenvector) and
-        corresponding energies E_in so that the eigenvector overlap between V_in and V_ref
-        is maximised.
-        """
-        # Take dot product between each eigenvector in V and state_vec
-        overlap_vectors = np.absolute(np.matmul(np.conj(V_in.T), V_ref))
-
-        # Find which state has the largest overlap:
-        index = np.argsort(np.argmax(overlap_vectors, axis=1))
-        # Store energy and state
-        E_out = E_in[index]
-        V_out = V_in[:, index]
-
-        return E_out, V_out
 
     def calculate_probabilities(self, psis: np.ndarray, V: np.ndarray) -> np.ndarray:
         """
