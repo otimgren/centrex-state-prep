@@ -39,6 +39,7 @@ class SimulationResult:
     t_array: np.ndarray
     psis: np.ndarray
     energies: np.ndarray
+    energies_diabatic: np.ndarray
     probabilities: np.ndarray
     V_ini: np.ndarray
     V_fin: np.ndarray
@@ -160,6 +161,19 @@ class SimulationResult:
 
         return self.energies[:, index_state]
 
+    def get_state_energy_diabatic(self, state: centrex_TlF.State) -> np.array:
+        """
+        Gets the energy of state that is closes to provided state at each time step.
+
+        Corresponds (somewhat) to diabatic following of eigenstates
+        """
+
+        index_state = find_max_overlap_idx(
+            state.state_vector(self.hamiltonian.QN), self.V_ini
+        )
+
+        return self.energies_diabatic[:, index_state]
+
 
 @dataclass
 class Simulator:
@@ -223,9 +237,14 @@ class Simulator:
 
         # Perform time-evolution
         if self.microwave_fields is None:
-            psis_t, energies, probalities, V_ini, V_fin = self._time_evolve(
-                H_t, t_array
-            )
+            (
+                psis_t,
+                energies,
+                energies_diabatic,
+                probalities,
+                V_ini,
+                V_fin,
+            ) = self._time_evolve(H_t, t_array)
         else:
             psis_t, energies, probalities, V_ini, V_fin = self._time_evolve_mu(
                 H_t, H_mu_t, t_array
@@ -242,6 +261,7 @@ class Simulator:
             t_array,
             psis_t,
             energies,
+            energies_diabatic,
             probalities,
             V_ini,
             V_fin,
@@ -280,6 +300,7 @@ class Simulator:
 
         # Initialize containers to store results
         psis_t, energies, probabilities = self._init_results_containers(t_array, H_tini)
+        energies_diabatic = energies.copy()
 
         # Initialize reference matrix of eigenvectors that is used to keep track
         # of adiabatic evolution of eigenstates
@@ -301,6 +322,7 @@ class Simulator:
 
             # Reorder eigenvectors and energies
             Es, evecs = reorder_evecs(V, D, V_ref)
+            Es_diabatic, _ = reorder_evecs(V, D, V_ref_ini)
 
             # Calculate propagator for the system
             U_dt = V @ np.diag(np.exp(-1j * D * dt)) @ V.conj().T
@@ -310,13 +332,14 @@ class Simulator:
 
             # Store results for this timestep
             psis_t[i + 1, :, :] = self.psis
-            energies[i + 1, :] = D
+            energies[i + 1, :] = Es
+            energies_diabatic[i + 1, :] = Es_diabatic
             probabilities[i + 1, :, :] = self.calculate_probabilities(self.psis, evecs)
 
             # Change V_ref
             V_ref = evecs
 
-        return psis_t, energies, probabilities, V_ref_ini, V_ref
+        return psis_t, energies, energies_diabatic, probabilities, V_ref_ini, V_ref
 
     def _time_evolve_mu(self, H_slow: Callable, H_mu: Callable, t_array: np.ndarray):
         """
