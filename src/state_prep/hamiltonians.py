@@ -3,6 +3,8 @@ from typing import Callable, List
 
 import centrex_TlF
 
+from .electric_fields import ElectricField
+from .magnetic_fields import MagneticField
 from .trajectory import Trajectory
 
 
@@ -19,8 +21,8 @@ class SlowHamiltonian(Hamiltonian):
 
     Js: List[int]
     trajectory: Trajectory
-    E_R: Callable
-    B_R: Callable
+    electric_field: Callable
+    magnetic_field: Callable
     basis: str = "uncoupled"
 
     def __post_init__(self):
@@ -33,7 +35,7 @@ class SlowHamiltonian(Hamiltonian):
         else:
             NotImplementedError("Basis not implemented.")
 
-        self.H_R = lambda R: self.H_EB(self.E_R(R), self.B_R(R))
+        self.H_R = lambda R: self.H_EB(self.electric_field.E_R(R), self.magnetic_field.B_R(R))
 
     def get_H_t_func(self) -> Callable:
         """

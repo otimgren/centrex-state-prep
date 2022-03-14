@@ -109,6 +109,44 @@ class SimulationResult:
 
         return states
 
+    def plot_state_energy(self, state: centrex_TlF.State, ax: plt.Axes = None):
+        """
+        Plots the energy of state
+        """
+        energies = self.get_state_energy(state)
+
+        if ax is None:
+            fig, ax = plt.subplots()
+
+        label = (
+            state.remove_small_components(tol=0.5).normalize().make_real().__repr__()
+        )
+        ax.plot(self.t_array / 1e-6, energies / (2 * np.pi / 1e3), label=label)
+        ax.set_xlabel(r"Time / $\mu$s")
+        ax.set_ylabel("Energy / kHz")
+
+    def plot_state_energies(
+        self, states: List[centrex_TlF.State], ax: plt.Axes = None,
+    ) -> None:
+        """
+        Plots probabilities over time for states specified in the list states.
+        """
+        if ax is None:
+            fig, ax = plt.subplots()
+        for state in states:
+            self.plot_state_energy(state, ax=ax)
+
+    def get_state_energy(self, state: centrex_TlF.State) -> np.ndarray:
+        """
+        Gets the energy of state for all values in t_array.
+        """
+
+        index_state = find_max_overlap_idx(
+            state.state_vector(self.hamiltonian.QN), self.V_ini
+        )
+
+        return self.energies[:, index_state]
+
 
 @dataclass
 class Simulator:
@@ -141,7 +179,7 @@ class Simulator:
         B_t = self.magnetic_field.get_B_t_func(self.trajectory.R_t)
 
         # Generate Hamiltonian that has slow time-evolution included
-        H_t = self.hamiltonian.get_H_t_func(E_t, B_t)
+        H_t = self.hamiltonian.get_H_t_func()
 
         # Generate Hamiltonians for microwaves
         if self.microwave_fields is not None:
