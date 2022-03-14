@@ -3,6 +3,8 @@ from typing import Callable, List
 
 import centrex_TlF
 
+from .trajectory import Trajectory
+
 
 class Hamiltonian:
     pass
@@ -10,10 +12,16 @@ class Hamiltonian:
 
 @dataclass
 class SlowHamiltonian(Hamiltonian):
+    """
+    Representation for the slowly evolving Hamiltonian which contains the
+    internal Hamiltonian of the TlF molecule and the Stark and Zeeman Hamiltonians.
+    """
+
     Js: List[int]
+    trajectory: Trajectory
+    E_R: Callable
+    B_R: Callable
     basis: str = "uncoupled"
-    E_t: Callable = None
-    B_t: Callable = None
 
     def __post_init__(self):
         if self.basis == "uncoupled":
@@ -25,13 +33,11 @@ class SlowHamiltonian(Hamiltonian):
         else:
             NotImplementedError("Basis not implemented.")
 
-        if self.E_t is not None and self.B_t is not None:
-            self.H_t = self.get_H_t_func(self.E_t, self.B_t)
+        self.H_R = lambda R: self.H_EB(self.E_R(R), self.B_R(R))
 
-    def get_H_t_func(self, E_t: Callable, B_t: Callable) -> Callable:
+    def get_H_t_func(self) -> Callable:
         """
-        Returns a function that gives the Stark and Zeeman Hamiltonians 
-        as function of time.
+        Returns a function that gives the slow Hamiltonian as a function of time.
         """
-        return lambda t: self.H_EB(E_t(t), B_t(t))
+        return lambda t: self.H_R(self.trajectory.R_t(t))
 

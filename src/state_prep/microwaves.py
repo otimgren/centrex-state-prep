@@ -88,7 +88,9 @@ class Intensity:
         Convert intensity (W/m^2) to electric field in V/cm and return electric
         field magnitude.
         """
-        return np.sqrt(2 * I_R(R, power) / (constants.c * constants.epsilon_0)) / 100
+        return (
+            np.sqrt(2 * self.I_R(R, power) / (constants.c * constants.epsilon_0)) / 100
+        )
 
 
 class MicrowaveField:
@@ -109,8 +111,37 @@ class MicrowaveField:
         self.intensity = intensity  # Spatial dependence of microwave intensity
         self.polarization = polarization  # Polarization of microwave field
         self.muW_freq = muW_freq  # Frequency of microwaves
-        self.H_list = None  # Couplings for x,y,z-polarized microwaves
-        self.D = None  # Matrix for shifting energies in rotating frame
+        self.H_list = self.generate_coupling_matrices(
+            QN
+        )  # Couplings for x,y,z-polarized microwaves
+        self.D = self.generate_D(QN)  # Matrix for shifting energies in rotating frame
+
+    def get_H_t_func(self, R_t: Callable, QN: List[centrex_TlF.State]) -> Callable:
+        """
+        Returns a function that gives Hamiltonian for the microwave field as a 
+        function of time. 
+        """
+        # Find the electric field due to the microwaves as a function of time
+        E_t = lambda t: self.intensity.E_R(R_t(t))
+
+        # Find polarization as a function of time:
+        p_t = lambda t: self.polarization.p_R(R_t(t))
+
+        # Find upper and lower triangular parts of coupling matrices
+        Hu_x, Hu_y, Hu_z = tuple([np.triu(H) for H in self.H_list])
+        Hl_x, Hl_y, Hl_z = tuple([np.tril(H) for H in self.H_list])
+
+        def H_t(t: float) -> np.ndarray:
+            E = E_t(t)
+            p = p_t(t)
+            pd = p.conj()
+
+            return (constants_X.D_TlF * E / 2) * (
+                (p[0] * Hu_x + p[1] * Hu_y + p[2] * Hu_z)
+                + (pd[0] * Hl_x + pd[1] * Hl_y + pd[2] * Hl_z)
+            )
+
+        return H_t
 
     def generate_coupling_matrices(self, QN: List[centrex_TlF.State]) -> None:
         """
@@ -158,6 +189,37 @@ class MicrowaveField:
             if QN[i].J == Je:
                 D[i, i] = -omega
 
+    def calculate_microwave_power(
+        self, state1: State, state2: State, Omega: float, R: np.ndarray,
+    ) -> float:
+        """
+        Calculates the microwave power required to have Rabi rate Omega for the microwave
+        transition between state1 and state2 at position R
+        """
+
+        # Calculate electric field magnitude at R for 1W of total power
+        E = self.intensity.E_R(R, power=1.0)
+
+        # Determine main polarization component of microwave field at given point
+        pol_vec = self.polarization.p_R_main(R)
+
+        # Calculate the angular part of the matrix element between the states
+        ME = calculate_ED_ME_mixed_state(
+            state1.transform_to_coupled(),
+            state2.transform_to_coupled(),
+            pol_vec=pol_vec,
+        )
+
+        # Calculate the Rabi rate for P = 1W
+        Omega1W = ME * constants_X.D_TlF * E / 2
+
+        print(E)
+
+        # Determine what power is required (Omega \propto sqrt(Power))
+        power_req = (Omega / Omega1W) ** 2
+
+        self.intensity.power = power_req[0]
+
 
 def make_H_mu(J1, J2, QN, pol_vec=np.array((0, 0, 1))):
     """
@@ -202,34 +264,4 @@ def make_H_mu(J1, J2, QN, pol_vec=np.array((0, 0, 1))):
 
     # return the coupling matrix
     return H_mu
-
-
-def calculate_microwave_power(
-    state1: State,
-    state2: State,
-    Omega: float,
-    R: np.ndarray,
-    microwave_field: MicrowaveField,
-) -> float:
-    """
-    Calculates the microwave power required to have Rabi rate Omega for the microwave
-    transition between state1 and state2 at position R
-    """
-
-    # Calculate electric field magnitude at R for 1W of total power
-    E = microwave_field.intensity.E_R(R, power=1.0)
-
-    # Determine main polarization component of microwave field at given point
-    pol_vec = microwave_field.polarization.p_R_main(R)
-
-    # Calculate the angular part of the matrix element between the states
-    ME = calculate_ED_ME_mixed_state(state1, state2, pol_vec=pol_vec)
-
-    # Calculate the Rabi rate for P = 1W
-    Omega1W = constants_X.D_TlF * E / 2
-
-    # Determine what power is required (Omega \propto sqrt(Power))
-    power_req = (Omega / Omega1W) ** 2
-
-    return power_req
 

@@ -21,7 +21,7 @@ class GaussianBeam(Intensity):
     k: np.ndarray
     freq: float
 
-    def I_R(self, R: np.ndarray, power = None) -> float:
+    def I_R(self, R: np.ndarray, power=None) -> float:
         """
         Calculates the intensity at point R.
         """
@@ -50,7 +50,7 @@ class GaussianBeam(Intensity):
         z_R = 4 * np.pi * sigma ** 2 / wavelength
 
         return (
-            (1 / (2 * sigma))
+            (1 / (2 * np.pi * sigma ** 2))
             * (1 / np.sqrt(1 + (z / z_R) ** 2))
             * np.exp(-(r ** 2) / (2 * sigma ** 2))
         )

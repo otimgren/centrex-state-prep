@@ -143,11 +143,42 @@ class Simulator:
         # Generate Hamiltonian that has slow time-evolution included
         H_t = self.hamiltonian.get_H_t_func(E_t, B_t)
 
+        # Generate Hamiltonians for microwaves
+        if self.microwave_fields is not None:
+            # Initialize matrix for shifting energies in rotating frame
+            D_mu = np.zeros(len(self.hamiltonian.QN), len(self.hamiltonian.QN))
+
+            # Initialize container for Hamiltonians
+            muw_hams = []
+
+            for microwave_field in self.microwave_fields:
+                muw_hams.append(
+                    microwave_field.get_H_t_func(
+                        self.trajectory.R_t, self.hamiltonian.QN
+                    )
+                )
+                D_mu += microwave_field.D
+
+        # Generate function that gives couplings due to all microwaves
+        def H_mu_tot_t(t):
+            H_mu_tot = muw_hams[0](t)
+            if len(muw_hams) > 1:
+                for H_mu_t in muw_hams[1:]:
+                    H_mu_tot = H_mu_tot + H_mu_t(t)
+            return H_mu_tot
+
         # Generate time array
         t_array = np.linspace(0, T, N_steps)
 
         # Perform time-evolution
-        psis_t, energies, probalities, V_ini, V_fin = self._time_evolve(H_t, t_array)
+        if self.microwave_fields is None:
+            psis_t, energies, probalities, V_ini, V_fin = self._time_evolve(
+                H_t, t_array
+            )
+        else:
+            psis_t, energies, probalities, V_ini, V_fin = self._time_evolve_mu(
+                H_t, H_mu_t, t_array
+            )
 
         # Generate a result object
         result = SimulationResult(
@@ -211,6 +242,58 @@ class Simulator:
 
             # Calculate Hamiltonian
             H_slow_i = H_slow(t)
+
+            # Diagonalize Hamiltonian
+            D, V, info = zheevd(H_slow_i)
+            if info != 0:
+                D, V = np.linalg.eigh(H_slow_i)
+
+            # Reorder eigenvectors and energies
+            Es, evecs = reorder_evecs(V, D, V_ref)
+
+            # Calculate propagator for the system
+            U_dt = V @ np.diag(np.exp(-1j * D * dt)) @ V.conj().T
+
+            # Apply propagator to each state vector
+            self.psis = np.einsum("ij,kj->ki", U_dt, self.psis)
+
+            # Store results for this timestep
+            psis_t[i + 1, :, :] = self.psis
+            energies[i + 1, :] = D
+            probabilities[i + 1, :, :] = self.calculate_probabilities(self.psis, evecs)
+
+            # Change V_ref
+            V_ref = evecs
+
+        return psis_t, energies, probabilities, V_ref_ini, V_ref
+
+    def _time_evolve_mu(self, H_slow: Callable, H_mu: Callable, t_array: np.ndarray):
+        """
+        Time evolves the system using the Hamiltonian function H_t
+        over the time period in t_array.
+        """
+        # Calculate Hamiltonian at tini
+        H_tini = H_slow(t_array[0])
+
+        # Initialize state vectors
+        self.init_state_vecs(H_tini)
+
+        # Initialize containers to store results
+        psis_t, energies, probabilities = self._init_results_containers(t_array, H_tini)
+
+        # Initialize reference matrix of eigenvectors that is used to keep track
+        # of adiabatic evolution of eigenstates
+        E_ref, V_ref = np.linalg.eigh(H_tini)
+        V_ref_ini = V_ref
+
+        # Loop over t_array to time-evolve
+        for i, t in enumerate(tqdm(t_array[:-1])):
+            # Calculate the timestep
+            dt = t_array[i + 1] - t_array[i]
+
+            # Calculate Hamiltonians
+            H_slow_i = H_slow(t)
+            H_mu_i = H
 
             # Diagonalize Hamiltonian
             D, V, info = zheevd(H_slow_i)
