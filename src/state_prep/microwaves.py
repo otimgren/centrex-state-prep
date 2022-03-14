@@ -83,12 +83,12 @@ class Intensity:
     def __init__(self, I_R: Callable):
         self.I_R = I_R
 
-    def E_R(self, R: np.ndarray) -> np.ndarray:
+    def E_R(self, R: np.ndarray, power: float = None) -> np.ndarray:
         """
         Convert intensity (W/m^2) to electric field in V/cm and return electric
         field magnitude.
         """
-        return np.sqrt(2 * I_R(R) / (constants.c * constants.epsilon_0)) / 100
+        return np.sqrt(2 * I_R(R, power) / (constants.c * constants.epsilon_0)) / 100
 
 
 class MicrowaveField:
@@ -205,9 +205,31 @@ def make_H_mu(J1, J2, QN, pol_vec=np.array((0, 0, 1))):
 
 
 def calculate_microwave_power(
-    state1: State, state2: State, Omega: float, R: np.ndarray, mw_field: MicrowaveField
+    state1: State,
+    state2: State,
+    Omega: float,
+    R: np.ndarray,
+    microwave_field: MicrowaveField,
 ) -> float:
     """
     Calculates the microwave power required to have Rabi rate Omega for the microwave
     transition between state1 and state2 at position R
     """
+
+    # Calculate electric field magnitude at R for 1W of total power
+    E = microwave_field.intensity.E_R(R, power=1.0)
+
+    # Determine main polarization component of microwave field at given point
+    pol_vec = microwave_field.polarization.p_R_main(R)
+
+    # Calculate the angular part of the matrix element between the states
+    ME = calculate_ED_ME_mixed_state(state1, state2, pol_vec=pol_vec)
+
+    # Calculate the Rabi rate for P = 1W
+    Omega1W = constants_X.D_TlF * E / 2
+
+    # Determine what power is required (Omega \propto sqrt(Power))
+    power_req = (Omega / Omega1W) ** 2
+
+    return power_req
+
