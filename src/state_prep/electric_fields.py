@@ -16,9 +16,15 @@ class ElectricField(StaticField):
     Class for representing electric fields.
     """
 
-    def __init__(self, E_R: Callable = None):
+    def __init__(self, E_R: Callable = None, R_t: Callable = None):
         self.E_R = E_R
         self.R_to_r = np.array([[0, 0, 1], [0, -1, 0], [1, 0, 0]])
+
+        # If trajectory over time is provided, generate electric field over time also
+        if R_t is not None:
+            self.E_t = self.get_E_t_func(R_t)
+        else:
+            self.E_t = None
 
     def __add__(self, other):
         """

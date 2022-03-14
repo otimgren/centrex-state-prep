@@ -3,6 +3,7 @@ from typing import Callable, List, Union
 
 import centrex_TlF
 import numpy as np
+from centrex_TlF import State
 from centrex_TlF.constants import constants_X
 from centrex_TlF.couplings.matrix_elements import calculate_ED_ME_mixed_state
 from scipy import constants
@@ -17,7 +18,6 @@ class Polarization:
 
     p_R_main: Callable
     k_vec: np.ndarray
-    freq: float = None
 
     def __post_init__(self):
         # Check that k-vector and polarization are orthogonal
@@ -26,9 +26,9 @@ class Polarization:
 
         # Check that k-vector is normalized
         err_msg = "k-vector not normalized"
-        assert np.abs(self.k_vec) ** 2 == 1.0, err_msg
+        assert np.sum(np.abs(self.k_vec) ** 2) == 1.0, err_msg
 
-    def get_long_pol(self, R: np.ndarray, E_R: Callable) -> np.ndarray:
+    def get_long_pol(self, R: np.ndarray, E_R: Callable, freq: float) -> np.ndarray:
         """
         Returns the longitudinal polarization component.
         """
@@ -41,13 +41,18 @@ class Polarization:
             div += derivative(func, R[i], dx=1e-3)
 
         # Calculate wavenumber for field
-        k = 2 * np.pi * self.freq / constants.c
+        k = 2 * np.pi * freq / constants.c
 
         # Scale polarization vector appropriately
-        p_long = div / (-1j * k) * self.k_vec
+        if k != 0:
+            p_long = div / (-1j * k) * self.k_vec
+
+        else:
+            p_long = 0 * self.k_vec
+
         return p_long
 
-    def p_R(self, R: np.ndarray, E_R: Callable = None) -> np.ndarray:
+    def p_R(self, R: np.ndarray, E_R: Callable = None, freq: float = 0) -> np.ndarray:
         """
         Calculate polarization vector at given point and return it
         """
@@ -61,7 +66,7 @@ class Polarization:
             p_main = self.p_R_main(R)
 
             # Calculate longitudinal component
-            p_long = self.get_long_pol(R, E_R)
+            p_long = self.get_long_pol(R, E_R, freq)
 
             # Normalize polarization vector
             p = p_main + p_long
@@ -70,28 +75,13 @@ class Polarization:
             return p
 
 
-@dataclass
-class MWSpatialDependence:
+class Intensity:
     """
     Class for representing spatial dependence of microwave field intensity.
     """
 
-    I_R: Callable
-    polarization: Polarization
-
-    def Omega_R(
-        self, ground_main: centrex_TlF.State, excited_main: centrex_TlF.State,
-    ):
-        """
-        Converts the intensity into Rabi rate.
-        """
-        pol_vec = self.polarization.p_R(R, self.E_R)
-
-        angular_ME = calculate_ED_ME_mixed_state(
-            excited_main, ground_main, pol_vec=pol_vec
-        )
-
-        return angular_ME * constants_X.D_TlF * E_R(R)
+    def __init__(self, I_R: Callable):
+        self.I_R = I_R
 
     def E_R(self, R: np.ndarray) -> np.ndarray:
         """
@@ -107,11 +97,17 @@ class MicrowaveField:
     """
 
     def __init__(
-        self, Jg: int, Je: int, spatial_dep: MWSpatialDependence, muW_freq: float
+        self,
+        Jg: int,
+        Je: int,
+        intensity: Intensity,
+        polarization: Polarization,
+        muW_freq: float,
     ) -> None:
         self.Jg = Jg  # J for ground state
         self.Je = Je  # J for excited state
-        self.spatial_dep = spatial_dep  # Spatial dependence of microwave intensity
+        self.intensity = intensity  # Spatial dependence of microwave intensity
+        self.polarization = polarization  # Polarization of microwave field
         self.muW_freq = muW_freq  # Frequency of microwaves
         self.H_list = None  # Couplings for x,y,z-polarized microwaves
         self.D = None  # Matrix for shifting energies in rotating frame
@@ -123,10 +119,6 @@ class MicrowaveField:
         """
         Jg = self.Jg
         Je = self.Je
-
-        # Find the ground and excited states
-        ground_states = QuantumSelector(J=Jg).get_states(QN)
-        excited_states = QuantumSelector(J=Je).get_states(QN)
 
         # Loop over possible polarizations and generate coupling matrices
         H_list = []
@@ -210,3 +202,12 @@ def make_H_mu(J1, J2, QN, pol_vec=np.array((0, 0, 1))):
 
     # return the coupling matrix
     return H_mu
+
+
+def calculate_microwave_power(
+    state1: State, state2: State, Omega: float, R: np.ndarray, mw_field: MicrowaveField
+) -> float:
+    """
+    Calculates the microwave power required to have Rabi rate Omega for the microwave
+    transition between state1 and state2 at position R
+    """

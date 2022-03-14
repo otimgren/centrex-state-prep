@@ -12,6 +12,8 @@ class Hamiltonian:
 class SlowHamiltonian(Hamiltonian):
     Js: List[int]
     basis: str = "uncoupled"
+    E_t: Callable = None
+    B_t: Callable = None
 
     def __post_init__(self):
         if self.basis == "uncoupled":
@@ -22,6 +24,9 @@ class SlowHamiltonian(Hamiltonian):
             )
         else:
             NotImplementedError("Basis not implemented.")
+
+        if self.E_t is not None and self.B_t is not None:
+            self.H_t = self.get_H_t_func(self.E_t, self.B_t)
 
     def get_H_t_func(self, E_t: Callable, B_t: Callable) -> Callable:
         """

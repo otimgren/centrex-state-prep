@@ -12,7 +12,7 @@ from .hamiltonians import Hamiltonian, SlowHamiltonian
 from .magnetic_fields import MagneticField
 from .microwaves import MicrowaveField
 from .trajectory import Trajectory
-from .utils import find_max_overlap_idx, vector_to_state
+from .utils import find_max_overlap_idx, reorder_evecs, vector_to_state
 
 
 @dataclass
@@ -218,7 +218,7 @@ class Simulator:
                 D, V = np.linalg.eigh(H_slow_i)
 
             # Reorder eigenvectors and energies
-            Es, evecs = self.reorder_evecs(V, D, V_ref)
+            Es, evecs = reorder_evecs(V, D, V_ref)
 
             # Calculate propagator for the system
             U_dt = V @ np.diag(np.exp(-1j * D * dt)) @ V.conj().T
@@ -262,25 +262,6 @@ class Simulator:
         probabilities[0, :, :] = self.calculate_probabilities(self.psis, V)
 
         return psis_t, energies, probabilities
-
-    def reorder_evecs(
-        self, V_in: np.ndarray, E_in: np.ndarray, V_ref: np.ndarray
-    ) -> Tuple[np.ndarray]:
-        """
-        Reorders the matrix of eigenvectors V_in (each column is an eigenvector) and
-        corresponding energies E_in so that the eigenvector overlap between V_in and V_ref
-        is maximised.
-        """
-        # Take dot product between each eigenvector in V and state_vec
-        overlap_vectors = np.absolute(np.matmul(np.conj(V_in.T), V_ref))
-
-        # Find which state has the largest overlap:
-        index = np.argsort(np.argmax(overlap_vectors, axis=1))
-        # Store energy and state
-        E_out = E_in[index]
-        V_out = V_in[:, index]
-
-        return E_out, V_out
 
     def calculate_probabilities(self, psis: np.ndarray, V: np.ndarray) -> np.ndarray:
         """
