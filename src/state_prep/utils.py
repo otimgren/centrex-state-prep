@@ -1,7 +1,8 @@
+import pickle
 from typing import Tuple
 
 import numpy as np
-from centrex_TlF import State
+from centrex_TlF import State, UncoupledBasisState
 
 
 def vector_to_state(state_vector, QN, E=None):
@@ -42,3 +43,72 @@ def reorder_evecs(
     V_out = V_in[:, index]
 
     return E_out, V_out
+
+
+def make_hamiltonian(path, c1=126030.0, c2=17890.0, c3=700.0, c4=-13300.0):
+    """
+    Generates Hamiltonian based on a pickle file
+    """
+    with open(path, "rb") as f:
+        hamiltonians = pickle.load(f)
+
+        # Substitute values into hamiltonian
+        variables = [
+            sympy.symbols("Brot"),
+            *sympy.symbols("c1 c2 c3 c4"),
+            sympy.symbols("D_TlF"),
+            *sympy.symbols("mu_J mu_Tl mu_F"),
+        ]
+
+        lambdified_hamiltonians = {
+            H_name: sympy.lambdify(variables, H_matrix)
+            for H_name, H_matrix in hamiltonians.items()
+        }
+
+        # Molecular constants
+
+        # Values for rotational constant are from "Microwave Spectral tables: Diatomic molecules" by Lovas & Tiemann (1974).
+        # Note that Brot differs from the one given by Ramsey by about 30 MHz.
+        B_e = 6.689873e9
+        alpha = 45.0843e6
+        Brot = B_e - alpha / 2
+        D_TlF = 4.2282 * 0.393430307 * 5.291772e-9 / 4.135667e-15  # [Hz/(V/cm)]
+        mu_J = 35  # Hz/G
+        mu_Tl = 1240.5  # Hz/G
+        mu_F = 2003.63  # Hz/G
+
+        H = {
+            H_name: H_fn(Brot, c1, c2, c3, c4, D_TlF, mu_J, mu_Tl, mu_F)
+            for H_name, H_fn in lambdified_hamiltonians.items()
+        }
+
+        Ham = (
+            lambda E, B: 2
+            * np.pi
+            * (
+                H["Hff"]
+                + E[0] * H["HSx"]
+                + E[1] * H["HSy"]
+                + E[2] * H["HSz"]
+                + B[0] * H["HZx"]
+                + B[1] * H["HZy"]
+                + B[2] * H["HZz"]
+            )
+        )
+
+        return Ham
+
+
+def make_QN(Jmin, Jmax, I1=1 / 2, I2=1 / 2):
+    """
+    Function that generates a list of quantum numbersfor TlF
+    """
+    QN = [
+        UncoupledBasisState(J, mJ, I1, m1, I2, m2)
+        for J in np.arange(Jmin, Jmax + 1)
+        for mJ in np.arange(-J, J + 1)
+        for m1 in np.arange(-I1, I1 + 1)
+        for m2 in np.arange(-I2, I2 + 1)
+    ]
+
+    return QN

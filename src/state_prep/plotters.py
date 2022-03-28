@@ -9,6 +9,7 @@ import numpy as np
 from centrex_TlF import State
 from centrex_TlF.constants.constants_X import D_TlF
 
+from .electric_fields import ElectricField
 from .hamiltonians import Hamiltonian
 from .microwaves import MicrowaveField
 from .utils import find_max_overlap_idx, reorder_evecs
@@ -17,18 +18,22 @@ from .utils import find_max_overlap_idx, reorder_evecs
 @dataclass
 class CouplingPlotter:
     state_pairs: List[Tuple[State]]
-    E_t: Callable
-    H_t: Callable
-    QN: List[State]
+    hamiltonian: Hamiltonian
+    electric_field: ElectricField
+    microwave_field: MicrowaveField
     t_array: np.ndarray
 
     def __post_init__(self) -> None:
+        self.QN = self.hamiltonian.QN
         # Find eigenstates of H_t at each time
         self.find_eigenstates()
 
         # Make sure the microwave_field coupling Hamiltonian has been generated
         if self.microwave_field.H_list is None:
             raise ValueError("No microwave_field coupling matrices found")
+
+        # Find matrix elements
+        self.find_couplings()
 
     def plot_coupling_strengths(self, ax=None):
         """
@@ -54,16 +59,21 @@ class CouplingPlotter:
         Finds the eigenstates of H_t at each time in t_array while making sure they are
         ordered consistently (adiabatic following of states)
         """
-        # Initialize container for eigenstates at each time
-        V_array = np.zeros((len(self.t_array, len(self.QN), len(self.QN))))
+        # Get Hamiltonian as function of time
+        H_t = self.hamiltonian.get_H_t_func()
 
-        D_ref_0, V_ref_0 = np.linalg.eigh(H)
+        # Initialize container for eigenstates at each time
+        V_array = np.zeros(
+            (len(self.t_array), len(self.QN), len(self.QN)), dtype=complex
+        )
+
+        D_ref_0, V_ref_0 = np.linalg.eigh(H_t(self.t_array[0]))
         self.V_ref = V_ref_0
         V_ref = V_ref_0
 
-        for i, t in enumerate(t_array):
+        for i, t in enumerate(self.t_array):
             D, V = np.linalg.eigh(H_t(t))
-            D, V = reorder_evecs(V, E, V_ref)
+            D, V = reorder_evecs(V, D, V_ref)
             V_array[i, :, :] = V
 
         self.V_array = V_array
@@ -75,7 +85,7 @@ class CouplingPlotter:
         """
 
         # Find the state vectors for each state in at each time
-        self.state_pair_vecs = self._find_exact_state_vecs()
+        self.state_pair_vecs = self._find_exact_state_vec_pairs()
 
         # Calculate matrix elements between state pairs at each time
         self.MEs = self._calculate_matrix_elements()
@@ -85,7 +95,7 @@ class CouplingPlotter:
         Finds exact state vecs for a state at all times in t_array 
         """
         # Find the index that corresponds to the state
-        idx = find_max_overlap_idx(state.state_vec(self.QN), self.V_ref)
+        idx = find_max_overlap_idx(state.state_vector(self.hamiltonian.QN), self.V_ref)
 
         return self.V_array[:, :, idx]
 
@@ -119,14 +129,15 @@ class CouplingPlotter:
         H_mu_z = self.microwave_field.H_list[2]
 
         for state_vecs1, state_vecs2 in self.state_pair_vecs:
-            couplings = np.zeros(self.t_array.shape)
+            couplings = np.zeros(self.t_array.shape, dtype=complex)
 
-            for i, t in enumerate(t_array):
-                E_t = self.E_t(t)
-                couplings[i] = D_TlF * (
-                    E_t[0] * H_mu_x + E_t[1] * H_mu_y + E_t[2] * H_mu_z
+            for i, t in enumerate(self.t_array):
+                p_t = self.microwave_field.p_t(t)
+                coupling_matrix = p_t[0] * H_mu_x + p_t[1] * H_mu_y + p_t[2] * H_mu_z
+
+                couplings[i] = (
+                    state_vecs1[i, :].conj().T @ coupling_matrix @ state_vecs2[i, :]
                 )
-
             couplings_list.append(couplings)
 
         return couplings_list

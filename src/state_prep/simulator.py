@@ -1,4 +1,6 @@
+import pickle
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Callable, List, Tuple
 
 import centrex_TlF
@@ -39,16 +41,20 @@ class SimulationResult:
     t_array: np.ndarray
     psis: np.ndarray
     energies: np.ndarray
-    energies_diabatic: np.ndarray
     probabilities: np.ndarray
     V_ini: np.ndarray
     V_fin: np.ndarray
+
+    def __post_init__(self):
+        # Generate array of positions
+        self.z_array = self.t_array * self.trajectory.Vini[2] + self.trajectory.Rini[2]
 
     def plot_state_probability(
         self,
         state: centrex_TlF.State,
         initial_state: centrex_TlF.State,
         ax: plt.Axes = None,
+        position: bool = False,
     ) -> None:
         """
         Plots the probability of being found in a given adiabatically evolved eigenstate
@@ -61,14 +67,19 @@ class SimulationResult:
         label = (
             state.remove_small_components(tol=0.5).normalize().make_real().__repr__()
         )
-        ax.plot(self.t_array / 1e-6, probs, label=label)
-        ax.set_xlabel(r"Time / $\mu$s")
+        if position:
+            ax.plot(self.z_array / 1e-2, probs, label=label)
+            ax.set_xlabel(r"Z-position / cm")
+        else:
+            ax.plot(self.t_array / 1e-6, probs, label=label)
+            ax.set_xlabel(r"Time / $\mu$s")
 
     def plot_state_probabilities(
         self,
         states: List[centrex_TlF.State],
         initial_state: centrex_TlF.State,
         ax: plt.Axes = None,
+        position: bool = False,
     ) -> None:
         """
         Plots probabilities over time for states specified in the list states.
@@ -76,7 +87,7 @@ class SimulationResult:
         if ax is None:
             fig, ax = plt.subplots()
         for state in states:
-            self.plot_state_probability(state, initial_state, ax=ax)
+            self.plot_state_probability(state, initial_state, ax=ax, position=position)
 
     def get_state_probability(
         self, state: centrex_TlF.State, initial_state: centrex_TlF.State, ax=None
@@ -172,6 +183,13 @@ class SimulationResult:
 
         return self.energies_diabatic[:, index_state]
 
+    def save_to_pickle(self, path: Path) -> None:
+        """
+        Saves the result to a pickle.
+        """
+        with open(path, "wb+") as f:
+            pickle.dump(self, f)
+
 
 @dataclass
 class Simulator:
@@ -209,7 +227,7 @@ class Simulator:
         # Generate Hamiltonians for microwaves
         if self.microwave_fields is not None:
             # Initialize matrix for shifting energies in rotating frame
-            D_mu = np.zeros(len(self.hamiltonian.QN), len(self.hamiltonian.QN))
+            D_mu = np.zeros((len(self.hamiltonian.QN), len(self.hamiltonian.QN)))
 
             # Initialize container for Hamiltonians
             muw_hams = []
@@ -222,30 +240,25 @@ class Simulator:
                 )
                 D_mu += microwave_field.D
 
-        # Generate function that gives couplings due to all microwaves
-        def H_mu_tot_t(t):
-            H_mu_tot = muw_hams[0](t)
-            if len(muw_hams) > 1:
-                for H_mu_t in muw_hams[1:]:
-                    H_mu_tot = H_mu_tot + H_mu_t(t)
-            return H_mu_tot
+            # Generate function that gives couplings due to all microwaves
+            def H_mu_tot_t(t):
+                H_mu_tot = muw_hams[0](t)
+                if len(muw_hams) > 1:
+                    for H_mu_t in muw_hams[1:]:
+                        H_mu_tot = H_mu_tot + H_mu_t(t)
+                return H_mu_tot
 
         # Generate time array
         t_array = np.linspace(0, T, N_steps)
 
         # Perform time-evolution
         if self.microwave_fields is None:
-            (
-                psis_t,
-                energies,
-                energies_diabatic,
-                probalities,
-                V_ini,
-                V_fin,
-            ) = self._time_evolve(H_t, t_array)
+            (psis_t, energies, probalities, V_ini, V_fin,) = self._time_evolve(
+                H_t, t_array
+            )
         else:
             psis_t, energies, probalities, V_ini, V_fin = self._time_evolve_mu(
-                H_t, H_mu_t, t_array
+                H_t, H_mu_tot_t, D_mu, t_array
             )
 
         # Generate a result object
@@ -259,7 +272,6 @@ class Simulator:
             t_array,
             psis_t,
             energies,
-            energies_diabatic,
             probalities,
             V_ini,
             V_fin,
@@ -337,15 +349,21 @@ class Simulator:
             # Change V_ref
             V_ref = evecs
 
-        return psis_t, energies, energies_diabatic, probabilities, V_ref_ini, V_ref
+        return psis_t, energies, probabilities, V_ref_ini, V_ref
 
-    def _time_evolve_mu(self, H_slow: Callable, H_mu: Callable, t_array: np.ndarray):
+    def _time_evolve_mu(
+        self,
+        H_slow_t: Callable,
+        H_mu_t: Callable,
+        D_mu: np.ndarray,
+        t_array: np.ndarray,
+    ):
         """
         Time evolves the system using the Hamiltonian function H_t
         over the time period in t_array.
         """
         # Calculate Hamiltonian at tini
-        H_tini = H_slow(t_array[0])
+        H_tini = H_slow_t(t_array[0])
 
         # Initialize state vectors
         self.init_state_vecs(H_tini)
@@ -356,6 +374,9 @@ class Simulator:
         # Initialize reference matrix of eigenvectors that is used to keep track
         # of adiabatic evolution of eigenstates
         E_ref, V_ref = np.linalg.eigh(H_tini)
+        index = np.argsort(E_ref)
+        E_ref = E_ref[index]
+        V_ref = V_ref[:, index]
         V_ref_ini = V_ref
 
         # Loop over t_array to time-evolve
@@ -364,26 +385,60 @@ class Simulator:
             dt = t_array[i + 1] - t_array[i]
 
             # Calculate Hamiltonians
-            H_slow_i = H_slow(t)
-            H_mu_i = H
+            H_slow_i = H_slow_t(t)
+            H_mu_i = H_mu_t(t)
 
-            # Diagonalize Hamiltonian
+            # Diagonalize slow Hamiltonian and transfer to basis where it is
+            # diagonal
             D, V, info = zheevd(H_slow_i)
             if info != 0:
                 D, V = np.linalg.eigh(H_slow_i)
 
+            # Sort the eigenvalues so they are in ascending order
+            index = np.argsort(D)
+            D = D[index]
+            V = V[:, index]
+
+            # Make intermediate Hamiltonian (diagonalized version of H_slow)
+            H_int = V.conj().T @ H_slow_i @ V
+
+            # Find the microwave coupling matrix in the new basis
+            H_mu = V.conj().T @ H_mu_i @ V
+
+            # Make total intermediate Hamiltonian
+            H_int = H_int + H_mu
+
+            # Shift energies of intermediate Hamiltonian so it is in rotating frame
+            H_rot = H_int + D_mu
+
+            # Diagonalize the Hamiltonian in the rotating frame
+            D_rot, V_rot, info_rot = zheevd(H_rot)
+            if info_rot != 0:
+                print("zheevd didn't work for H_rot")
+                D_rot, V_rot = np.linalg.eigh(H_rot)
+
             # Reorder eigenvectors and energies
-            Es, evecs = reorder_evecs(V, D, V_ref)
+            Es, evecs = D, V
+            Es, evecs = reorder_evecs(evecs, Es, V_ref)
 
             # Calculate propagator for the system
-            U_dt = V @ np.diag(np.exp(-1j * D * dt)) @ V.conj().T
+            U_dt = (
+                V
+                @ V_rot
+                @ np.diag(np.exp(-1j * D_rot * dt))
+                @ V_rot.conj().T
+                @ V.conj().T
+            )
+
+            for j in range(0, len(self.initial_states)):
+                self.psis[j] = U_dt @ self.psis[j]
 
             # Apply propagator to each state vector
-            self.psis = np.einsum("ij,kj->ki", U_dt, self.psis)
+            # self.psis = np.einsum("ij,kj->ki", U_dt, self.psis)
 
             # Store results for this timestep
             psis_t[i + 1, :, :] = self.psis
-            energies[i + 1, :] = D
+            energies[i + 1, :] = Es
             probabilities[i + 1, :, :] = self.calculate_probabilities(self.psis, evecs)
 
             # Change V_ref

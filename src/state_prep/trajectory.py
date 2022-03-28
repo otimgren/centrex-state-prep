@@ -11,8 +11,8 @@ class Trajectory:
     zfin: float
 
     def __post_init__(self):
-        self.Rini = self.Rini.reshape(3, 1)
-        self.Vini = self.Vini.reshape(3, 1)
+        self.Rini = self.Rini  # .reshape(3, 1)
+        self.Vini = self.Vini  # .reshape(3, 1)
 
     def R_t(self, t: Union[float, np.ndarray]) -> np.ndarray:
         """

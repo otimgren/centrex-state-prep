@@ -85,18 +85,20 @@ class ElectricField(StaticField):
 
         t_array = np.linspace(0, T, 1000)
 
-        Es = E_t(t_array)
+        Es = np.array([E_t(t) for t in t_array])
 
         if not ax:
             fig, ax = plt.subplots()
 
-        ax.plot(t_array / 1e-6, Es[0], label=r"E_x")
-        ax.plot(t_array / 1e-6, Es[1], label=r"E_y")
-        ax.plot(t_array / 1e-6, Es[2], label=r"E_z")
+        ax.plot(t_array / 1e-6, Es[:, 0], label=r"E_x")
+        ax.plot(t_array / 1e-6, Es[:, 1], label=r"E_y")
+        ax.plot(t_array / 1e-6, Es[:, 2], label=r"E_z")
         ax.set_xlabel(r"Time / $\mu$s")
         ax.set_ylabel("Electric field / V/cm")
         ax.set_title("Electric field experienced by molecule over time")
         ax.legend()
+
+        return t_array, Es, ax
 
 
 def linear_E_field(x, z0=0, E0=200, k=100, n=np.array((0, 0, 1))):
