@@ -2,6 +2,7 @@
 Define some intensity profiles for microwaves
 """
 from dataclasses import dataclass
+from typing import List, Tuple
 
 import numpy as np
 from scipy import constants
@@ -154,4 +155,30 @@ class MeasuredBeam(Intensity):
         integral = 2 * np.pi * quad(integrand, 0.0, np.inf)[0]
 
         return integral
+
+
+@dataclass
+class BackgroundField(Intensity):
+    """
+    Uniform field profile for representing a bacground due to scattered microwaves.
+    
+    inputs:
+    lims:   List of limits for the box where the field is defined (m)
+    intensity:  Intensity of the field (W/m^2)
+    """
+
+    lims: List[Tuple[float]]
+    intensity: float = 0
+
+    def I_R(self, R: np.ndarray, power=None) -> float:
+        """
+        Calculates the intensity at point R.
+        """
+        # If R is not inside box return zero
+        for i in range(len(self.lims)):
+            if not (self.lims[i][0] < R[i] < self.lims[i][1]):
+                return 0
+
+        # Otherwise return intensity
+        return self.intensity
 

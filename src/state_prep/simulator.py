@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Callable, List, Tuple
 
 import centrex_TlF
+import dill
 import matplotlib.pyplot as plt
 import numpy as np
 from scipy.linalg.lapack import zheevd
@@ -22,10 +23,10 @@ class SimulationResult:
     """
     Class for storing results from simulations.
 
-    t_array         : times at which results were returned
+    t_array         : times at which results were returned (seconds)
     psis            : state vectors at each time when starting from initial states defined in 
                       initial_states
-    energies        : energies of all eigenstates of the hamiltonian at each time
+    energies        : energies of all eigenstates of the hamiltonian at each time (2pi*Hz)
     probabilities   : for each state in initial staets, the probability of being found in 
                       each eigenstate of the hamiltonian
     V_ref           : reference matrix of eigenstates of hamiltonian which tells what state each
@@ -99,7 +100,7 @@ class SimulationResult:
         index_ini = self.initial_states.index(initial_state)
 
         index_state = find_max_overlap_idx(
-            state.state_vector(self.hamiltonian.QN), self.V_ini
+            state.state_vector(self.hamiltonian.QN), self.V_fin
         )
 
         return self.probabilities[:, index_ini, index_state]
@@ -188,7 +189,7 @@ class SimulationResult:
         Saves the result to a pickle.
         """
         with open(path, "wb+") as f:
-            pickle.dump(self, f)
+            dill.dump(self, f)
 
 
 @dataclass
@@ -208,7 +209,9 @@ class Simulator:
         self.psis = None
         self.initial_states = None
 
-    def run(self, N_steps=int(1e4)):
+    def run(
+        self, N_steps=int(1e4),
+    ):
         """
         Runs the simulation.
         """
@@ -232,13 +235,21 @@ class Simulator:
             # Initialize container for Hamiltonians
             muw_hams = []
 
+            # Container fro frequencies of all microwaves
+            omegas = []
+
             for microwave_field in self.microwave_fields:
                 muw_hams.append(
                     microwave_field.get_H_t_func(
                         self.trajectory.R_t, self.hamiltonian.QN
                     )
                 )
-                D_mu += microwave_field.D
+                # Background fields should always be at the same frequency as
+                # as main field so don't do the shifting for them
+                if not microwave_field.background_field:
+                    omegas.append(2 * np.pi * microwave_field.muW_freq)
+                    microwave_field.generate_D(self.hamiltonian.QN, omega=sum(omegas))
+                    D_mu += microwave_field.D
 
             # Generate function that gives couplings due to all microwaves
             def H_mu_tot_t(t):
@@ -253,7 +264,7 @@ class Simulator:
 
         # Perform time-evolution
         if self.microwave_fields is None:
-            (psis_t, energies, probalities, V_ini, V_fin,) = self._time_evolve(
+            (psis_t, energies, probalities, V_ini, V_fin) = self._time_evolve(
                 H_t, t_array
             )
         else:

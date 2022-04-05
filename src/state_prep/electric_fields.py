@@ -1,8 +1,10 @@
 from dataclasses import dataclass
-from typing import Callable
+from pathlib import Path
+from typing import Callable, Union
 
 import matplotlib.pyplot as plt
 import numpy as np
+import pandas as pd
 import scipy
 from scipy import constants
 
@@ -76,7 +78,7 @@ class ElectricField(StaticField):
         """
         return lambda t: self.get_E_R(R_t(t))
 
-    def plot(self, trajectory: Trajectory, ax=None):
+    def plot(self, trajectory: Trajectory, ax=None, position=False):
         """
         Plots the electric field along the given trajectory
         """
@@ -90,15 +92,29 @@ class ElectricField(StaticField):
         if not ax:
             fig, ax = plt.subplots()
 
-        ax.plot(t_array / 1e-6, Es[:, 0], label=r"E_x")
-        ax.plot(t_array / 1e-6, Es[:, 1], label=r"E_y")
-        ax.plot(t_array / 1e-6, Es[:, 2], label=r"E_z")
-        ax.set_xlabel(r"Time / $\mu$s")
-        ax.set_ylabel("Electric field / V/cm")
-        ax.set_title("Electric field experienced by molecule over time")
-        ax.legend()
+        if not position:
+            ax.plot(t_array / 1e-6, Es[:, 0], label=r"E_x")
+            ax.plot(t_array / 1e-6, Es[:, 1], label=r"E_y")
+            ax.plot(t_array / 1e-6, Es[:, 2], label=r"E_z")
+            ax.set_xlabel(r"Time / $\mu$s")
+            ax.set_ylabel("Electric field / V/cm")
+            ax.set_title("Electric field experienced by molecule over time")
+            ax.legend()
 
-        return t_array, Es, ax
+            return t_array, Es, ax
+
+        else:
+            z_array = np.array([trajectory.R_t(t)[2] for t in t_array])
+
+            ax.plot(z_array / 1e-2, Es[:, 0], label=r"E_x")
+            ax.plot(z_array / 1e-2, Es[:, 1], label=r"E_y")
+            ax.plot(z_array / 1e-2, Es[:, 2], label=r"E_z")
+            ax.set_xlabel(r"Z-position / cm")
+            ax.set_ylabel("Electric field / V/cm")
+            ax.set_title("Electric field experienced by molecule over position")
+            ax.legend()
+
+            return z_array, Es, ax
 
 
 def linear_E_field(x, z0=0, E0=200, k=100, n=np.array((0, 0, 1))):
@@ -209,4 +225,23 @@ def E_field_ring(x, z0=0, V=2e4, R=2.25 * 0.0254):
 
     # Return the electric field as an array which only has a z-component (approximation)
     return E / 100
+
+
+def Ez_from_csv(
+    path: Union[
+        Path, str
+    ] = "../electric_fields/Electric field components vs z-position_SPA_ExpeVer.csv"
+) -> Callable:
+    """
+    Makes an interpolation function for Ez based on the csv data found in path.
+    """
+    df_E = pd.read_csv(path)
+    Ez_interp = scipy.interpolate.interp1d(
+        df_E["Distance-250mm [mm]"] / 1000,
+        df_E["Ez []"] / 100,
+        fill_value=0,
+        kind="cubic",
+    )
+
+    return Ez_interp
 

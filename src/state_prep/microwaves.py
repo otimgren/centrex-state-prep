@@ -20,17 +20,19 @@ class Polarization:
     """
 
     p_R_main: Callable  # Main component of polarization
-    k_vec: np.ndarray  # k-vector for field
+    k_vec: np.ndarray = None  # k-vector for field
     f_long: float = 1  # Factor that multiplies longitudinal component
 
     def __post_init__(self):
-        # Check that k-vector and polarization are orthogonal
-        err_msg = "k-vector and main polarization should be orthogonal"
-        assert (self.p_R_main(np.array((0, 0, 0))) @ self.k_vec) < 1e-6, err_msg
 
-        # Check that k-vector is normalized
-        err_msg = "k-vector not normalized"
-        assert np.sum(np.abs(self.k_vec) ** 2) == 1.0, err_msg
+        if self.k_vec is not None:
+            # Check that k-vector and polarization are orthogonal
+            err_msg = "k-vector and main polarization should be orthogonal"
+            assert (self.p_R_main(np.array((0, 0, 0))) @ self.k_vec) < 1e-6, err_msg
+
+            # Check that k-vector is normalized
+            err_msg = "k-vector not normalized"
+            assert np.sum(np.abs(self.k_vec) ** 2) == 1.0, err_msg
 
     def get_long_pol(self, R: np.ndarray, ip: Intensity, freq: float) -> np.ndarray:
         """
@@ -45,8 +47,7 @@ class Polarization:
         div = 0
         p_main = self.p_R_main(R)
         for i in range(3):
-
-            unit_vec = np.zeros((3, 1))
+            unit_vec = np.zeros(R.shape)
             unit_vec[i] = 1
             func = lambda x: (ip.E_R(R=(R + x * unit_vec)) / ip.E_R(R=ip.R0))
             div += derivative(func, 0, dx=1e-4) * p_main[i]
@@ -69,7 +70,7 @@ class Polarization:
         """
         # If no spatial electric field, specified, ignore any longitudinal component
         # from spatial variation
-        if not ip:
+        if (not ip) or self.k_vec is None:
             return self.p_R_main(R)
 
         else:
@@ -99,6 +100,7 @@ class MicrowaveField:
         polarization: Polarization,
         muW_freq: float,
         QN: List[centrex_TlF.State],
+        background_field: bool = False,
     ) -> None:
         self.Jg = Jg  # J for ground state
         self.Je = Je  # J for excited state
@@ -108,6 +110,9 @@ class MicrowaveField:
         self.generate_coupling_matrices(QN)  # Couplings for x,y,z-polarized microwaves
         self.QN = QN
         self.generate_D(QN)  # Matrix for shifting energies in rotating frame
+        self.background_field = (
+            background_field  # Flag to show if field is a background field
+        )
 
     def get_H_t_func(self, R_t: Callable, QN: List[centrex_TlF.State]) -> Callable:
         """
@@ -171,12 +176,13 @@ class MicrowaveField:
 
         self.H_list = H_list
 
-    def generate_D(self, QN: List[centrex_TlF.State]) -> None:
+    def generate_D(self, QN: List[centrex_TlF.State], omega: float = None) -> None:
         """ 
         Generates a diagonal matrix that is used to shift energies in the rotating frame
         """
         Je = self.Je
-        omega = 2 * np.pi * self.muW_freq
+        if not omega:
+            omega = 2 * np.pi * self.muW_freq
 
         # Generate the shift matrix
         D = np.zeros((len(QN), len(QN)))
@@ -228,9 +234,15 @@ class MicrowaveField:
 
     def set_position(self, R0: np.ndarray) -> None:
         """
-        Sets the central position for the microwave intensity profile
+        Sets the central position for the microwave intensity profile.
         """
         self.intensity.R0 = R0
+
+    def set_power(self, power: float) -> None:
+        """
+        Sets the power for the microwaves.
+        """
+        self.intensity.power = power
 
 
 def make_H_mu(J1, J2, QN, pol_vec=np.array((0, 0, 1))):
