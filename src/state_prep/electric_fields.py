@@ -230,7 +230,26 @@ def E_field_ring(x, z0=0, V=2e4, R=2.25 * 0.0254):
 def Ez_from_csv(
     path: Union[
         Path, str
-    ] = "../electric_fields/Electric field components vs z-position_SPA_ExpeVer.csv"
+    ] = "C:/Users/Oskari/Documents/GitHub/centrex-state-prep/electric_fields/Electric field components vs z-position_SPA_ExpeVer.csv"
+) -> Callable:
+    """
+    Makes an interpolation function for Ez based on the csv data found in path.
+    """
+    df_E = pd.read_csv(path)
+    Ez_interp = scipy.interpolate.interp1d(
+        df_E["Distance-250mm [mm]"] / 1000,
+        df_E["Ez []"] / 100,
+        fill_value=0,
+        kind="cubic",
+    )
+
+    return Ez_interp
+
+
+def Ez_from_csv_offset(
+    path: Union[
+        Path, str
+    ] = "../electric_fields/Electric field components vs z-position_SPA_ExpeVer_12_7mm_offset.csv"
 ) -> Callable:
     """
     Makes an interpolation function for Ez based on the csv data found in path.
