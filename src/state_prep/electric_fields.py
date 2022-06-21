@@ -1,3 +1,4 @@
+import pickle
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Union
@@ -249,7 +250,7 @@ def Ez_from_csv(
 def Ez_from_csv_offset(
     path: Union[
         Path, str
-    ] = "../electric_fields/Electric field components vs z-position_SPA_ExpeVer_12_7mm_offset.csv"
+    ] = "../../../electric_fields/Electric field components vs z-position_SPA_ExpeVer_12_7mm_offset.csv"
 ) -> Callable:
     """
     Makes an interpolation function for Ez based on the csv data found in path.
@@ -261,6 +262,20 @@ def Ez_from_csv_offset(
         fill_value=0,
         kind="cubic",
     )
+
+    return Ez_interp
+
+
+def E_SPB_from_pickle(
+    path: Union[
+        Path, str
+    ] = "../../electric_fields/SPB_Ex_interp_8_5_2021_V_r=500_V_off=110_V_ring=3700.pickle"
+) -> Callable:
+    """
+    Fetches an interpolation function for based on finite element simulations for SPB
+    """
+    with open(path, "rb") as f:
+        Ez_interp = pickle.load(f)
 
     return Ez_interp
 

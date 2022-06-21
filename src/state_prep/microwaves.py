@@ -22,13 +22,15 @@ class Polarization:
     p_R_main: Callable  # Main component of polarization
     k_vec: np.ndarray = None  # k-vector for field
     f_long: float = 1  # Factor that multiplies longitudinal component
+    dir_long: np.ndarray = None
 
     def __post_init__(self):
 
         if self.k_vec is not None:
-            # Check that k-vector and polarization are orthogonal
-            err_msg = "k-vector and main polarization should be orthogonal"
-            assert (self.p_R_main(np.array((0, 0, 0))) @ self.k_vec) < 1e-6, err_msg
+            # # Check that k-vector and polarization are orthogonal
+            # err_msg = "k-vector and main polarization should be orthogonal: "
+            # dot = np.abs(self.p_R_main(np.array((0, 0, 0))) @ self.k_vec)
+            # assert dot < 1e-6, err_msg + str(dot)
 
             # Check that k-vector is normalized
             err_msg = "k-vector not normalized"
@@ -42,6 +44,8 @@ class Polarization:
         R = position where longitudinal polarization is to be calculated 
         ip = intensity profile of microwaves
         freq = Frequency of microwaves
+        dir = direction of longitudinal polarization if other than k-vector 
+              (useful if using multiple bases)
         """
         # Take div of E_R along main polarization
         div = 0
@@ -57,12 +61,14 @@ class Polarization:
 
         # Scale polarization vector appropriately
         if k != 0:
-            p_long = div / (1j * k) * self.k_vec
+            p_long = div / (1j * k)
 
         else:
-            p_long = 0 * self.k_vec
+            p_long = 0
 
-        return self.f_long * p_long
+        direction = self.k_vec if self.dir_long is None else self.dir_long
+
+        return self.f_long * p_long * direction
 
     def p_R(self, R: np.ndarray, ip: Intensity = None, freq: float = 0) -> np.ndarray:
         """
@@ -221,6 +227,36 @@ class MicrowaveField:
         power_req = (Omega / Omega1W) ** 2
 
         self.intensity.power = power_req
+
+    def calculate_rabi_rate(
+        self, state1: State, state2: State, power: float, R: np.ndarray,
+    ) -> float:
+        """
+        Calculates the Rabi rate for given power for the microwave
+        transition between state1 and state2 at position R assuming polarization is
+        fully along p_main.
+
+        returns:
+        Omega = Rabi rate for given power in 2pi*Hz
+        """
+
+        # Calculate electric field magnitude at R
+        E = self.intensity.E_R(R, power=power)
+
+        # Determine main polarization component of microwave field at given point
+        pol_vec = self.polarization.p_R_main(R)
+
+        # Calculate the angular part of the matrix element between the states
+        ME = calculate_ED_ME_mixed_state(
+            state1.transform_to_coupled(),
+            state2.transform_to_coupled(),
+            pol_vec=pol_vec,
+        )
+
+        # Calculate the Rabi rate for P = 1W (in Hz)
+        Omega = 2 * np.pi * np.abs(ME) * constants_X.D_TlF * E / 2
+
+        return Omega
 
     def set_frequency(self, freq: float) -> None:
         """
