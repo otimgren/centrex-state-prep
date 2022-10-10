@@ -266,7 +266,7 @@ def Ez_from_csv_offset(
     return Ez_interp
 
 
-def E_SPB_from_pickle(
+def E_SPB_from_pickle_old(
     path: Union[
         Path, str
     ] = "../../electric_fields/SPB_Ex_interp_8_5_2021_V_r=500_V_off=110_V_ring=3700.pickle"
@@ -278,4 +278,17 @@ def E_SPB_from_pickle(
         Ez_interp = pickle.load(f)
 
     return Ez_interp
+
+def E_SPB_from_pickle(fname:str ="E along r = 0_rods_wider_apart_Vring_3700_Vrod_540_rod_offset_200.pickle") -> Callable:
+    """
+    Fetches an interpolation function for electric field based on finite element simulations for SPB
+    """
+    path = "../../electric_fields/"+fname
+
+    with open(path, "rb") as f:
+        E_interps = pickle.load(f)
+
+    E_func = lambda Z: np.array([E_interps[0](Z), E_interps[1](Z), E_interps[2](Z)])
+
+    return E_func
 
