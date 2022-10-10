@@ -14,6 +14,37 @@ def vector_to_state(state_vector, QN, E=None):
 
     return state
 
+def matrix_to_states(V, QN, E = None):
+    #Find dimensions of matrix
+    matrix_dimensions = V.shape
+    
+    #Initialize a list for storing eigenstates
+    eigenstates = []
+    
+    for i in range(0,matrix_dimensions[1]):
+        #Find state vector
+        state_vector = V[:,i]
+
+        #Ensure that largest component has positive sign
+        index = np.argmax(np.abs(state_vector))
+        state_vector = state_vector * np.sign(state_vector[index])
+        
+        state = State()
+        
+        #Get data in correct format for initializing state object
+        for j, amp in enumerate(state_vector):
+            state += amp*QN[j]
+                    
+        if E is not None:
+            state.energy = E[i]
+
+        #Store the state in the list
+        eigenstates.append(state)
+        
+    
+    #Return the list of states
+    return eigenstates
+
 
 def find_max_overlap_idx(state_vec: np.ndarray, V_matrix: np.ndarray) -> int:
     # Take dot product between each eigenvector in V and state_vec
