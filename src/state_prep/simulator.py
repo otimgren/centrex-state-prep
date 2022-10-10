@@ -56,6 +56,7 @@ class SimulationResult:
         initial_state: centrex_TlF.State,
         ax: plt.Axes = None,
         position: bool = False,
+        state_mapper: Callable = None
     ) -> None:
         """
         Plots the probability of being found in a given adiabatically evolved eigenstate
@@ -66,7 +67,8 @@ class SimulationResult:
 
         probs = self.get_state_probability(state, initial_state)
         label = (
-            state.remove_small_components(tol=0.5).normalize().make_real().__repr__()
+            state.remove_small_components(tol=0.1).normalize().make_real().__repr__() if not state_mapper
+            else state_mapper(state).remove_small_components(tol=0.1).normalize().make_real().__repr__()
         )
         if position:
             ax.plot(self.z_array / 1e-2, probs, label=label)
@@ -81,6 +83,7 @@ class SimulationResult:
         initial_state: centrex_TlF.State,
         ax: plt.Axes = None,
         position: bool = False,
+        state_mapper: Callable = None
     ) -> None:
         """
         Plots probabilities over time for states specified in the list states.
@@ -88,7 +91,13 @@ class SimulationResult:
         if ax is None:
             fig, ax = plt.subplots()
         for state in states:
-            self.plot_state_probability(state, initial_state, ax=ax, position=position)
+            self.plot_state_probability(
+                state,
+                initial_state,
+                ax=ax,
+                position=position,
+                state_mapper=state_mapper
+                )
 
     def get_state_probability(
         self, state: centrex_TlF.State, initial_state: centrex_TlF.State, ax=None
@@ -100,7 +109,7 @@ class SimulationResult:
         index_ini = self.initial_states.index(initial_state)
 
         index_state = find_max_overlap_idx(
-            state.state_vector(self.hamiltonian.QN), self.V_fin
+            state.state_vector(self.hamiltonian.QN), self.V_ini
         )
 
         return self.probabilities[:, index_ini, index_state]
@@ -140,11 +149,12 @@ class SimulationResult:
             fig, ax = plt.subplots()
 
         label = (
-            state.remove_small_components(tol=0.5).normalize().make_real().__repr__()
+            state.remove_small_components(tol=0.1).normalize().make_real().__repr__()
         )
-        ax.plot(self.t_array / 1e-6, energies / (2 * np.pi / 1e3), label=label)
+        ax.plot(self.t_array / 1e-6, energies / (2 * np.pi * 1e3), label=label)
         ax.set_xlabel(r"Time / $\mu$s")
         ax.set_ylabel("Energy / kHz")
+        return energies
 
     def plot_state_energies(
         self,
@@ -155,10 +165,13 @@ class SimulationResult:
         """
         Plots probabilities over time for states specified in the list states.
         """
+        energies = []
         if ax is None:
             fig, ax = plt.subplots()
         for state in states:
-            self.plot_state_energy(state, zero_state=zero_state, ax=ax)
+            energies.append(self.plot_state_energy(state, zero_state=zero_state, ax=ax))
+
+        return energies
 
     def get_state_energy(self, state: centrex_TlF.State) -> np.ndarray:
         """
@@ -302,8 +315,8 @@ class Simulator:
         self.psis = []
         _, V = np.linalg.eigh(H_0)
         for state in self.initial_states_approx:
-            idx = centrex_TlF.states.find_state_idx_from_state(
-                H_0, state, self.hamiltonian.QN
+            idx = find_max_overlap_idx(
+                state.state_vector(self.hamiltonian.QN), V
             )
             self.psis.append(V[:, idx])
             self.initial_states.append(vector_to_state(V[:, idx], self.hamiltonian.QN))
@@ -484,11 +497,19 @@ class Simulator:
 
         return psis_t, energies, probabilities
 
+    
+    
     def calculate_probabilities(self, psis: np.ndarray, V: np.ndarray) -> np.ndarray:
         """
         Given state vectors as columns of psi, for each state vector, returns the
         probabilities of being in states stored as columns of V.
         """
+        # overlaps_list = []
+        # for psi in psis:
+        #     overlaps_list.append(V.conj().T @ psi)
+        # overlaps = np.array(overlaps_list)
+
         overlaps = np.einsum("ij,kj->ki", V.conj().T, psis)
+
         return np.abs(overlaps) ** 2
 
