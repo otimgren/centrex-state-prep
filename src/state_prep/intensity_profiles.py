@@ -7,6 +7,7 @@ from typing import List, Tuple
 import numpy as np
 from scipy import constants
 from scipy.integrate import quad
+from scipy.special import jv
 
 
 class Intensity:
@@ -47,7 +48,7 @@ class GaussianBeam(Intensity):
 
     def profile_R(self, R) -> float:
         """
-        Calculates the relative instensity at position R.
+        Calculates the relative intensity at position R.
 
         Normalized so that integral over profile equals 1. 
         """
@@ -69,6 +70,100 @@ class GaussianBeam(Intensity):
             * (1 / (1 + (z / z_R) ** 2))
             * np.exp(-(r ** 2) / (2 * (sigma ** 2 * (1 + (z / z_R) ** 2))))
         )
+
+@dataclass
+class BesselGaussianBeam(Intensity):
+    """
+    Class for Bessel-Gaussian microwave intensity profiles.
+    """
+
+    power: float
+    w0: float
+    alpha: float
+    R0: np.ndarray
+    k: np.ndarray
+    freq: float
+
+    def __post_init__(self):
+        self.wavelength = constants.c / self.freq
+        self.z_R = np.pi * self.w0 ** 2 / self.wavelength
+        self.integral = self.calculate_profile_integral()
+
+    def I_R(self, R: np.ndarray, power=None) -> float:
+        """
+        Calculates the intensity at point R.
+        """
+        if not power:
+            power = self.power
+
+        return power * self.profile_R(R) / self.integral
+
+    def E_R(self, R: np.ndarray, power: float = None) -> np.ndarray:
+        """
+        Convert intensity (W/m^2) to electric field in V/cm and return electric
+        field magnitude.
+        """
+        k = self.k
+        R0 = self.R0
+        w0 = self.w0
+        if not power:
+            power = self.power
+        # Calculate position along beam
+        z = np.dot(k, R) - np.dot(k, R0)
+
+        # Calculate radial offset from center of beam
+        r = np.sqrt(np.sum(((R - np.dot(k, R) * k) - (R0 - np.dot(k, R0) * k)) ** 2))
+
+        # Calculate Rayleigh range
+        z_R = self.z_R
+
+        # Calculate inverse of radius of curvature of wavefronts
+        invroc = z/(z**2 + z_R**2)
+
+        return (
+            np.sqrt(2 * power/self.integral / (constants.c * constants.epsilon_0)) / 100
+            *jv(0, self.alpha*r)
+            * np.sqrt((1 / (1 + (z / z_R) ** 2)))
+            * np.exp(-(r ** 2) / ((w0 ** 2 * (1 + (z / z_R) ** 2))))
+            #* np.exp(-1j*2*np.pi/self.wavelength * invroc * r**2/2)
+        )
+
+    def profile_R(self, R) -> float:
+        """
+        Calculates the relative intensity at position R.
+
+        Normalized so that intensity = 1 at r = 0, z = 0.  
+        """
+        k = self.k
+        R0 = self.R0
+        w0 = self.w0
+        # Calculate position along beam
+        z = np.dot(k, R) - np.dot(k, R0)
+
+        # Calculate radial offset from center of beam
+        r = np.sqrt(np.sum(((R - np.dot(k, R) * k) - (R0 - np.dot(k, R0) * k)) ** 2))
+
+        # Calculate Rayleigh range
+        z_R = self.z_R
+
+        return (
+            jv(0, self.alpha*r)**2
+            * (1 / (1 + (z / z_R) ** 2))
+            * np.exp(-2*(r ** 2) / ((w0 ** 2 * (1 + (z / z_R) ** 2))))
+        )
+
+    def calculate_profile_integral(self):
+        """
+        Calculates the integral of the radial intensity profile over all of space.
+        """
+        # Find a unit vector that is perpendicular to k
+        r_vec = (np.array([self.k[1], -self.k[0],0])
+                    /np.sqrt(self.k[1]**2+self.k[0]**2))
+
+        integrand = lambda r: r * self.profile_R(r*r_vec)
+        integral = 2 * np.pi * quad(integrand, 0.0, np.inf, limit = 100)[0]
+
+        return integral
 
 
 @dataclass
@@ -100,7 +195,7 @@ class MeasuredBeam(Intensity):
 
     def profile_R(self, R) -> float:
         """
-        Calculates the relative instensity at position R.
+        Calculates the relative intensity at position R.
 
         Normalized so that intensity = 1 at r = 0, z = 0. 
         """

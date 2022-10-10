@@ -42,9 +42,9 @@ class CouplingPlotter:
         if ax is None:
             fig, ax = plt.subplots()
 
-        for couplings, state_pair in zip(self.MEs, self.state_pairs):
-            label = f"{state_pair[0].__repr__} <-> {state_pair[1].__repr__}"
-            self.plot_coupling_strength(couplings, ax, label=label)
+        for i, (couplings, state_pair) in enumerate(zip(self.MEs, self.state_pairs)):
+            label = f"{state_pair[0].__repr__()} <-> {state_pair[1].__repr__()}"
+            self.plot_coupling_strength(np.abs(couplings), ax, label=label)
 
     def plot_coupling_strength(
         self, couplings: np.ndarray, ax: plt.Axes, label: str = None
@@ -75,6 +75,7 @@ class CouplingPlotter:
             D, V = np.linalg.eigh(H_t(t))
             D, V = reorder_evecs(V, D, V_ref)
             V_array[i, :, :] = V
+            V_ref = V
 
         self.V_array = V_array
 
@@ -136,7 +137,7 @@ class CouplingPlotter:
                 coupling_matrix = p_t[0] * H_mu_x + p_t[1] * H_mu_y + p_t[2] * H_mu_z
 
                 couplings[i] = (
-                    state_vecs1[i, :].conj().T @ coupling_matrix @ state_vecs2[i, :]
+                    state_vecs2[i, :].conj().T @ coupling_matrix @ state_vecs1[i, :]
                 )
             couplings_list.append(couplings)
 

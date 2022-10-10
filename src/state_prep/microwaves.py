@@ -49,12 +49,24 @@ class Polarization:
         """
         # Take div of E_R along main polarization
         div = 0
-        p_main = self.p_R_main(R)
+        p_main_xyz = self.p_R_main(R)
+
+        # Convert polarization vector to XYZ basis
+        p_main = np.array([p_main_xyz[2], -p_main_xyz[1], p_main_xyz[0]])
+        # print(p_main)
+
+        # Calculate each component of divergence
         for i in range(3):
             unit_vec = np.zeros(R.shape)
             unit_vec[i] = 1
             func = lambda x: (ip.E_R(R=(R + x * unit_vec)) / ip.E_R(R=ip.R0))
-            div += derivative(func, 0, dx=1e-4) * p_main[i]
+
+            dx = 1e-5
+            deriv = (ip.E_R(R=(R + dx/2 * unit_vec)) - ip.E_R(R=(R - dx/2 * unit_vec)))/ ip.E_R(R=ip.R0) /dx
+
+            # print(deriv*p_main[i])
+
+            div += deriv * p_main[i]
 
         # Calculate wavenumber for field
         k = 2 * np.pi * freq / constants.c
@@ -66,6 +78,8 @@ class Polarization:
         else:
             p_long = 0
 
+        # Define the direction of the longitudinal polarization component
+        # in the xyz-coordinates
         direction = self.k_vec if self.dir_long is None else self.dir_long
 
         return self.f_long * p_long * direction
