@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Callable, List, Union
+from typing import Callable, List, Tuple
 
 import centrex_TlF
 import numpy as np
@@ -23,8 +23,9 @@ class Polarization:
     k_vec: np.ndarray = None  # k-vector for field
     f_long: float = 1  # Factor that multiplies longitudinal component
     dir_long: np.ndarray = None
+    basis_conversion: Tuple = (np.array([0,0,1]), -np.array([0,1,0]), np.array([1,0,0]))
 
-    def __post_init__(self):
+    def __post_init__(self, ):
 
         if self.k_vec is not None:
             # # Check that k-vector and polarization are orthogonal
@@ -49,17 +50,22 @@ class Polarization:
         """
         # Take div of E_R along main polarization
         div = 0
-        p_main_xyz = self.p_R_main(R)
+        p_main_ini = self.p_R_main(R)
 
-        # Convert polarization vector to XYZ basis
-        p_main = np.array([p_main_xyz[2], -p_main_xyz[1], p_main_xyz[0]])
+        # Convert polarization vector to XYZ basis using the provided basis conversion
+        # vector
+        p_main = np.array([
+                np.dot(self.basis_conversion[0], p_main_ini),
+                np.dot(self.basis_conversion[1], p_main_ini),
+                np.dot(self.basis_conversion[2], p_main_ini),
+                ])
         # print(p_main)
 
         # Calculate each component of divergence
         for i in range(3):
             unit_vec = np.zeros(R.shape)
             unit_vec[i] = 1
-            func = lambda x: (ip.E_R(R=(R + x * unit_vec)) / ip.E_R(R=ip.R0))
+            # func = lambda x: (ip.E_R(R=(R + x * unit_vec)) / ip.E_R(R=ip.R0))
 
             dx = 1e-5
             deriv = (ip.E_R(R=(R + dx/2 * unit_vec)) - ip.E_R(R=(R - dx/2 * unit_vec)))/ ip.E_R(R=ip.R0) /dx
